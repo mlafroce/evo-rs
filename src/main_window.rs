@@ -4,6 +4,9 @@ use imgui::Context;
 use imgui_glow_renderer::AutoRenderer;
 use imgui_sdl2_support::SdlPlatform;
 use sdl2::event::Event;
+use sdl2::image::LoadTexture;
+use sdl2::rect::Rect;
+use sdl2::render::WindowCanvas;
 use sdl2::video::{GLProfile, Window};
 use sdl2::Sdl;
 
@@ -18,14 +21,14 @@ fn glow_context(window: &Window) -> glow::Context {
 }
 
 pub struct MainWindow {
+    canvas: WindowCanvas,
     sdl: Sdl,
-    window: Window,
 }
 
 impl MainWindow {
-    pub fn new() -> Self {
-        let sdl = sdl2::init().unwrap();
-        let video_subsystem = sdl.video().unwrap();
+    pub fn new() -> Result<Self, String> {
+        let sdl = sdl2::init()?;
+        let video_subsystem = sdl.video()?;
 
         /* hint SDL to initialize an OpenGL 3.3 core profile context */
         let gl_attr = video_subsystem.gl_attr();
@@ -42,19 +45,18 @@ impl MainWindow {
             .resizable()
             .build()
             .unwrap();
-        /* create a new OpenGL context and make it current */
-        Self { sdl, window }
-    }
-
-    pub fn run(&self) {
-        let gl_context = self.window.gl_create_context().unwrap();
-        self.window.gl_make_current(&gl_context).unwrap();
+        let gl_context = window.gl_create_context()?;
+        window.gl_make_current(&gl_context)?;
 
         /* enable vsync to cap framerate */
-        self.window.subsystem().gl_set_swap_interval(1).unwrap();
+        window.subsystem().gl_set_swap_interval(1)?;
         /* create new glow and imgui contexts */
-        let gl = glow_context(&self.window);
+        let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+        Ok(Self { canvas, sdl })
+    }
 
+    pub fn run(&mut self) -> Result<(), String> {
+        let gl = glow_context(self.canvas.window());
         let mut imgui = Context::create();
 
         /* disable creation of files on disc */
@@ -66,14 +68,21 @@ impl MainWindow {
             .fonts()
             .add_font(&[imgui::FontSource::DefaultFontData { config: None }]);
 
+        let texture_creator = self.canvas.texture_creator();
+
         let mut platform = SdlPlatform::init(&mut imgui);
-        let mut renderer = AutoRenderer::initialize(gl, &mut imgui).unwrap();
+        let mut renderer = AutoRenderer::initialize(gl, &mut imgui).map_err(|e| e.to_string())?;
 
         let mut timer = self.sdl.timer().unwrap();
         let mut last_tick = timer.ticks();
         let mut event_pump = self.sdl.event_pump().unwrap();
 
         let mut gui = Gui::default();
+
+        let img = texture_creator
+            .load_texture("asset/texture/dot.bmp")
+            .unwrap();
+
         'main: loop {
             let mut now = timer.ticks();
             if now - last_tick < TICK_LENGTH {
@@ -92,14 +101,24 @@ impl MainWindow {
             }
 
             // handle gui events
-            platform.prepare_frame(&mut imgui, &self.window, &event_pump);
+            unsafe { renderer.gl_context().clear_color(0.4, 0.4, 0.4, 1.0) };
+            unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
+
+            self.canvas
+                .copy(&img, Rect::new(0, 0, 20, 20), Rect::new(100, 100, 40, 40))
+                .unwrap();
+
+            // TODO: sdl2 0.34.5 doesn't have flush function yet
+            let raw_context = self.canvas.raw();
+            unsafe { sdl2::sys::SDL_RenderFlush(raw_context) };
+
+            platform.prepare_frame(&mut imgui, self.canvas.window(), &event_pump);
             gui.tick(timer.ticks());
             let draw_data = gui.render(&mut imgui);
-
-            unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
             renderer.render(draw_data).unwrap();
 
-            self.window.gl_swap_window();
+            self.canvas.present();
         }
+        Ok(())
     }
 }
