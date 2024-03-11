@@ -1,11 +1,11 @@
 use crate::gui::Gui;
+use crate::scene::scenario::Scenario;
 use glow::HasContext;
 use imgui::Context;
 use imgui_glow_renderer::AutoRenderer;
 use imgui_sdl2_support::SdlPlatform;
 use sdl2::event::Event;
-use sdl2::image::LoadTexture;
-use sdl2::rect::Rect;
+use sdl2::keyboard::Keycode;
 use sdl2::render::WindowCanvas;
 use sdl2::video::{GLProfile, Window};
 use sdl2::Sdl;
@@ -68,8 +68,6 @@ impl MainWindow {
             .fonts()
             .add_font(&[imgui::FontSource::DefaultFontData { config: None }]);
 
-        let texture_creator = self.canvas.texture_creator();
-
         let mut platform = SdlPlatform::init(&mut imgui);
         let mut renderer = AutoRenderer::initialize(gl, &mut imgui).map_err(|e| e.to_string())?;
 
@@ -79,9 +77,8 @@ impl MainWindow {
 
         let mut gui = Gui::default();
 
-        let img = texture_creator
-            .load_texture("asset/texture/dot.bmp")
-            .unwrap();
+        let texture_creator = self.canvas.texture_creator();
+        let mut scenario = Scenario::new(&texture_creator);
 
         'main: loop {
             let mut now = timer.ticks();
@@ -95,8 +92,16 @@ impl MainWindow {
                 /* pass all events to imgui platfrom */
                 platform.handle_event(&mut imgui, &event);
 
-                if let Event::Quit { .. } = event {
-                    break 'main;
+                match event {
+                    Event::Quit { .. } => break 'main,
+                    Event::KeyDown {
+                        keycode: Some(Keycode::A),
+                        ..
+                    } => {
+                        println!("Adding entity");
+                        scenario.add_entity();
+                    }
+                    _ => {}
                 }
             }
 
@@ -104,9 +109,7 @@ impl MainWindow {
             unsafe { renderer.gl_context().clear_color(0.4, 0.4, 0.4, 1.0) };
             unsafe { renderer.gl_context().clear(glow::COLOR_BUFFER_BIT) };
 
-            self.canvas
-                .copy(&img, Rect::new(0, 0, 20, 20), Rect::new(100, 100, 40, 40))
-                .unwrap();
+            scenario.render(&mut self.canvas);
 
             // TODO: sdl2 0.34.5 doesn't have flush function yet
             let raw_context = self.canvas.raw();
