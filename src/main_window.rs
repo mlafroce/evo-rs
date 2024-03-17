@@ -6,6 +6,7 @@ use imgui_glow_renderer::AutoRenderer;
 use imgui_sdl2_support::SdlPlatform;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::mouse::MouseButton;
 use sdl2::render::WindowCanvas;
 use sdl2::video::{GLProfile, Window};
 use sdl2::Sdl;
@@ -94,11 +95,16 @@ impl MainWindow {
 
                 match event {
                     Event::Quit { .. } => break 'main,
+                    Event::MouseButtonDown {
+                        x,
+                        y,
+                        mouse_btn: MouseButton::Left,
+                        ..
+                    } => scenario.click_entity(x, y),
                     Event::KeyDown {
                         keycode: Some(Keycode::A),
                         ..
                     } => {
-                        println!("Adding entity");
                         scenario.add_entity();
                     }
                     _ => {}
@@ -116,6 +122,7 @@ impl MainWindow {
             unsafe { sdl2::sys::SDL_RenderFlush(raw_context) };
 
             platform.prepare_frame(&mut imgui, self.canvas.window(), &event_pump);
+            gui.update(&scenario);
             gui.tick(timer.ticks());
             let draw_data = gui.render(&mut imgui);
             renderer.render(draw_data).unwrap();
